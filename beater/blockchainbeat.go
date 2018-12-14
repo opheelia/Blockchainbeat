@@ -1,9 +1,11 @@
 package beater
 
 import (
-	"fmt"
 	"time"
-
+  "fmt"
+  "net/http"
+  "encoding/json"
+	//"io/ioutil"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
@@ -51,11 +53,26 @@ func (bt *Blockchainbeat) Run(b *beat.Beat) error {
 		case <-ticker.C:
 		}
 
+		last_block := GetLastBlock()
+		logp.Info(fmt.Sprint(last_block))
+		//last_block = last_block.(string)
+		/*if err != nil {
+			logp.Info("")
+		}*/
+		//logp.Info("Last block of the chain is " + last_block_str)
+		var result map[string]interface{}
+		GetRequest(&result)
+		/*if err != nil {
+			logp.Info("GET request error")
+		}*/
+		logp.Info(fmt.Sprint(result))
+
 		event := beat.Event{
 			Timestamp: time.Now(),
 			Fields: common.MapStr{
 				"type":    b.Info.Name,
 				"counter": counter,
+				"message": result,
 			},
 		}
 		bt.client.Publish(event)
@@ -68,4 +85,29 @@ func (bt *Blockchainbeat) Run(b *beat.Beat) error {
 func (bt *Blockchainbeat) Stop() {
 	bt.client.Close()
 	close(bt.done)
+}
+func GetLastBlock() (float64){
+	resp, err := http.Get("https://api.blockcypher.com/v1/eth/main")
+	if err != nil {
+		logp.Info("ERROR : HTTP REQUEST LAST BLOCK")
+	}
+	defer resp.Body.Close()
+	var resp_body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&resp_body)
+	last_block := resp_body["height"].(float64)
+	return last_block
+
+}
+
+func GetRequest(result interface{}) {
+	resp, err := http.Get("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=2165403&apikey=YourApiKeyToken")
+	if err != nil {
+		logp.Info("")
+	}
+	defer resp.Body.Close()
+	/*body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		logp.Info("")
+	}*/
+  json.NewDecoder(resp.Body).Decode(result)
 }
