@@ -1,0 +1,5 @@
+= Blockchainbeat Docs
+
+Welcome to the Blockchainbeat documentation.
+
+
