@@ -4,8 +4,9 @@
 
 blockchainbeat:
   # Defines how often an event is sent to the output
-  period: 15s
+  period: 1s
 
+setup.template.overwrite: true
 #================================ General =====================================
 
 # The name of the shipper that publishes the network data. It can be used to group

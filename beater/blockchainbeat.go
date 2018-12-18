@@ -14,7 +14,7 @@ import (
 	"github.com/opheelia/blockchainbeat/config"
 )
 
-var number_of_blocks = 500
+var number_of_blocks = 2
 
 // Blockchainbeat configuration.
 type Blockchainbeat struct {
@@ -102,23 +102,39 @@ func GetBlockTransaction(result interface{}, block_number int) {
 func SendBlockTransactionsToElastic(last_block int, b *beat.Beat, bt *Blockchainbeat, counter int){
 	//Get block transactions up to last block number
 
-	for index:=last_block-number_of_blocks; index<=last_block; index++ {
+	for index:=last_block-number_of_blocks+1; index<=last_block; index++ {
 		logp.Info(fmt.Sprint(index))
 		var result map[string]interface{}
 		GetBlockTransaction(&result, index)
 		logp.Info(fmt.Sprintf("Transaction for block %v", index))
 		logp.Info(fmt.Sprint(result))
 
+		// Parse timeStamp field to get a date
+		data := result["result"].(map[string]interface{})
+		block_date := getBlockTimeFormat(data["timeStamp"].(string))
+		logp.Info(fmt.Sprintf("New time is %v, %T", block_date, block_date))
 		event := beat.Event{
 			Timestamp: time.Now(),
 			Fields: common.MapStr{
 				"type":    b.Info.Name,
 				"counter": counter,
-				"message": result,
+				"message": result["message"],
+				"blockNumber": data["blockNumber"],
+				"blockTime": block_date,
+				"blockMiner": data["blockMiner"],
 			},
 		}
 		bt.client.Publish(event)
 		logp.Info("Event sent")
 	}
+}
 
+func getBlockTimeFormat(timestamp string) (time.Time) {
+	i, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		logp.Info(fmt.Sprint("Timestamp cannot be parsed"))
+	}
+	//logp.Info(fmt.Sprintf("Before parsing %v is a %T", i, i))
+	tm := time.Unix(i,0)
+	return tm
 }

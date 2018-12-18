@@ -7,3 +7,7 @@
       required: true
       description: >
         PLEASE UPDATE DOCUMENTATION
+    - name: blockTime
+      type: date
+      required: true
+      description: >
