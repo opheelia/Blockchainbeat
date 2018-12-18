@@ -5,6 +5,7 @@ import (
   "fmt"
   "net/http"
   "encoding/json"
+	"strconv"
 	//"io/ioutil"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/opheelia/blockchainbeat/config"
 )
+
+var number_of_blocks = 500
 
 // Blockchainbeat configuration.
 type Blockchainbeat struct {
@@ -53,18 +56,57 @@ func (bt *Blockchainbeat) Run(b *beat.Beat) error {
 		case <-ticker.C:
 		}
 
+		//Get last block number
 		last_block := GetLastBlock()
-		logp.Info(fmt.Sprint(last_block))
-		//last_block = last_block.(string)
-		/*if err != nil {
-			logp.Info("")
-		}*/
-		//logp.Info("Last block of the chain is " + last_block_str)
+		logp.Info(fmt.Sprintf("Last block is %v, type %T", last_block, last_block))
+
+
+
+		SendBlockTransactionsToElastic(last_block, b, bt, counter)
+
+		counter++
+	}
+}
+
+// Stop stops blockchainbeat.
+func (bt *Blockchainbeat) Stop() {
+	bt.client.Close()
+	close(bt.done)
+}
+func GetLastBlock() (int){
+	resp, err := http.Get("https://api.blockcypher.com/v1/eth/main")
+	if err != nil {
+		logp.Info("ERROR : HTTP REQUEST LAST BLOCK")
+	}
+	defer resp.Body.Close()
+	var resp_body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&resp_body)
+	last_block := resp_body["height"].(float64)
+	return int(last_block)
+
+}
+
+func GetBlockTransaction(result interface{}, block_number int) {
+	resp, err := http.Get("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=" + strconv.Itoa(block_number) + "&apikey=YourApiKeyToken")
+	if err != nil {
+		logp.Info("")
+	}
+	defer resp.Body.Close()
+	/*body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		logp.Info("")
+	}*/
+  json.NewDecoder(resp.Body).Decode(result)
+}
+
+func SendBlockTransactionsToElastic(last_block int, b *beat.Beat, bt *Blockchainbeat, counter int){
+	//Get block transactions up to last block number
+
+	for index:=last_block-number_of_blocks; index<=last_block; index++ {
+		logp.Info(fmt.Sprint(index))
 		var result map[string]interface{}
-		GetRequest(&result)
-		/*if err != nil {
-			logp.Info("GET request error")
-		}*/
+		GetBlockTransaction(&result, index)
+		logp.Info(fmt.Sprintf("Transaction for block %v", index))
 		logp.Info(fmt.Sprint(result))
 
 		event := beat.Event{
@@ -77,37 +119,6 @@ func (bt *Blockchainbeat) Run(b *beat.Beat) error {
 		}
 		bt.client.Publish(event)
 		logp.Info("Event sent")
-		counter++
 	}
-}
 
-// Stop stops blockchainbeat.
-func (bt *Blockchainbeat) Stop() {
-	bt.client.Close()
-	close(bt.done)
-}
-func GetLastBlock() (float64){
-	resp, err := http.Get("https://api.blockcypher.com/v1/eth/main")
-	if err != nil {
-		logp.Info("ERROR : HTTP REQUEST LAST BLOCK")
-	}
-	defer resp.Body.Close()
-	var resp_body map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&resp_body)
-	last_block := resp_body["height"].(float64)
-	return last_block
-
-}
-
-func GetRequest(result interface{}) {
-	resp, err := http.Get("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=2165403&apikey=YourApiKeyToken")
-	if err != nil {
-		logp.Info("")
-	}
-	defer resp.Body.Close()
-	/*body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		logp.Info("")
-	}*/
-  json.NewDecoder(resp.Body).Decode(result)
 }
