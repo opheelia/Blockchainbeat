@@ -6,6 +6,7 @@ import (
   "net/http"
   "encoding/json"
 	"strconv"
+	"os"
 	//"io/ioutil"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
@@ -14,7 +15,7 @@ import (
 	"github.com/opheelia/blockchainbeat/config"
 )
 
-var number_of_blocks = 2
+var number_of_blocks = 10000
 
 // Blockchainbeat configuration.
 type Blockchainbeat struct {
@@ -57,12 +58,63 @@ func (bt *Blockchainbeat) Run(b *beat.Beat) error {
 		}
 
 		//Get last block number
-		last_block := GetLastBlock()
-		logp.Info(fmt.Sprintf("Last block is %v, type %T", last_block, last_block))
+		last_existing_block := GetLastBlock()
+		logp.Info(fmt.Sprintf("Last block is %v, type %T", last_existing_block, last_existing_block))
 
+		// Get last indexed block (stored into last_indexed_block.txt)
+		// if file does not exit, create it (f is file)
+		if _, err := os.Stat("beater/last_indexed_block.txt"); os.IsNotExist(err) {
+			f, err := os.Create("beater/last_indexed_block.txt")
+			d := []byte("06925596")
+			_, err = f.Write(d)
+			if err != nil {
+				return err
+			}
+			f.Sync()
+			f.Close()
+		}
+		f, err := os.OpenFile("beater/last_indexed_block.txt", os.O_RDWR, 0666)
+		if err != nil {
+			return err
+		}
 
+		b1 := make([]byte, 8)
+		_, err = f.Read(b1)
+		if err != nil {
+			return err
+		}
 
-		SendBlockTransactionsToElastic(last_block, b, bt, counter)
+		last_indexed_block, err := strconv.Atoi(string(b1))
+		if err != nil {
+			return err
+		}
+		logp.Info("Last read line %d for file\n ", last_indexed_block)
+
+		// Index blocks
+		if last_existing_block > last_indexed_block {
+			// Index new blocks
+			SendBlockTransactionsToElastic(last_indexed_block, last_existing_block, b, bt, counter)
+
+			// Write last existing block into the file
+			write_last_block := fmt.Sprintf("%08d\n", last_existing_block)
+			_, err = f.Seek(0, 0)
+			if err != nil {
+				return err
+				}
+			d := []byte(write_last_block)
+			_, err = f.Write(d)
+			if err != nil {
+				return err
+				}
+
+			logp.Info("Write last read line : %s", write_last_block)
+		} else {
+			logp.Info("All the blocks are already indexed")
+		}
+
+		// Close file
+		f.Sync()
+		f.Close()
 
 		counter++
 	}
@@ -99,10 +151,10 @@ func GetBlockTransaction(result interface{}, block_number int) {
   json.NewDecoder(resp.Body).Decode(result)
 }
 
-func SendBlockTransactionsToElastic(last_block int, b *beat.Beat, bt *Blockchainbeat, counter int){
+func SendBlockTransactionsToElastic(last_indexed_block int, last_block int, b *beat.Beat, bt *Blockchainbeat, counter int){
 	//Get block transactions up to last block number
 
-	for index:=last_block-number_of_blocks+1; index<=last_block; index++ {
+	for index:=last_indexed_block+1; index<=last_block; index++ {
 		logp.Info(fmt.Sprint(index))
 		var result map[string]interface{}
 		GetBlockTransaction(&result, index)
